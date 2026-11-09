@@ -1,0 +1,94 @@
+rules_version = '2';
+
+// QA Task Board — Firestore security rules.
+// Keep ALLOWED_DOMAIN and the admin list in sync with public/config.js.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Who is signed in ----
+    function signedIn() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower().matches('.*@1finance[.]org[.]in$');
+    }
+    function myProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function builtInAdmin() {
+      return request.auth.token.email.lower() in ['swarup.hande@1finance.org.in'];
+    }
+    // Signed in, has a profile, and not disabled.
+    function active() {
+      return signedIn()
+        && (builtInAdmin()
+            || (exists(/databases/$(database)/documents/users/$(request.auth.uid))
+                && myProfile().role in ['member', 'admin']));
+    }
+    function isAdmin() {
+      return signedIn() && (builtInAdmin() || myProfile().role == 'admin');
+    }
+
+    // ---- Task shape ----
+    function validTask(d) {
+      return d.keys().hasOnly(['title','status','priority','type','due','ownerId','notes',
+                               'createdBy','createdAt','updatedAt','updatedBy','doneAt'])
+        && d.title is string && d.title.size() > 0 && d.title.size() <= 200
+        && d.status in ['todo', 'progress', 'review', 'done']
+        && d.priority in ['P1', 'P2', 'P3', 'P4']
+        && d.type in ['QA Test', 'Bug Verification', 'Release Testing', 'General To-do']
+        && d.due is string && d.due.size() <= 10
+        && d.ownerId is string
+        && d.notes is string && d.notes.size() <= 5000
+        && d.createdBy is string;
+    }
+
+    // ---- People ----
+    match /users/{uid} {
+      // Everyone active sees the team list; you can always read your own profile.
+      allow read: if signedIn() && (request.auth.uid == uid || active());
+
+      // First sign-in creates your own profile as a Member.
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.uid == uid
+        && request.resource.data.email == request.auth.token.email.lower()
+        && request.resource.data.role == 'member';
+
+      // You may refresh your name/photo/last sign-in but never your role or email.
+      // Admins may change anyone's role.
+      allow update: if (signedIn() && request.auth.uid == uid
+                        && request.resource.data.diff(resource.data).affectedKeys()
+                             .hasOnly(['name', 'photoURL', 'lastLogin']))
+                    || (isAdmin()
+                        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['role'])
+                        && request.resource.data.role in ['member', 'admin', 'disabled']);
+
+      allow delete: if isAdmin();
+    }
+
+    // ---- Tasks ----
+    match /tasks/{taskId} {
+      allow read: if active();
+
+      allow create: if active()
+        && validTask(request.resource.data)
+        && request.resource.data.createdBy == request.auth.uid;
+
+      // Any active member can edit any task; who created it can't be changed.
+      allow update: if active()
+        && validTask(request.resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt;
+
+      // Delete: admins, or the person who created the task.
+      allow delete: if isAdmin()
+        || (active() && resource.data.createdBy == request.auth.uid);
+    }
+
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

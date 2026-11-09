@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>QA Task Board</title>
+<meta name="robots" content="noindex">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Loading -->
+<section class="gate" id="bootScreen">
+  <p class="fine">Loading…</p>
+</section>
+
+<!-- Login -->
+<section class="gate" id="loginScreen" hidden>
+  <div class="gate-card">
+    <p class="eyebrow">1 Finance · QA</p>
+    <h1>QA Task Board</h1>
+    <p>Sign in with your @1finance.org.in account to see and update the team's tasks.</p>
+    <button class="gbtn" id="googleBtn" type="button">
+      <svg viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>
+      Sign in with Google
+    </button>
+    <div class="or"><span>or</span></div>
+    <form class="email-form" id="emailForm" novalidate>
+      <p class="fine" id="emailHint" hidden>You opened a sign-in link. Enter the same email to finish signing in.</p>
+      <label class="f">Work email<input id="emailIn" type="email" autocomplete="email" inputmode="email" placeholder="name@1finance.org.in" required></label>
+      <button class="btn primary wide" id="emailBtn" type="submit">Email me a sign-in link</button>
+    </form>
+    <div class="sent" id="emailSent" role="status" hidden>
+      <p><b>Check your inbox.</b> We sent a sign-in link to <b id="sentTo"></b>. Open it on this device to sign in.</p>
+      <p class="fine">Not there? Check spam, or wait a minute.</p>
+      <button type="button" class="linkbtn" id="emailAgain">Use a different email</button>
+    </div>
+    <p class="err" id="loginErr" hidden></p>
+    <p class="fine" id="domainNote">Only company accounts can sign in.</p>
+  </div>
+</section>
+
+<!-- Disabled account -->
+<section class="gate" id="blockedScreen" hidden>
+  <div class="gate-card">
+    <p class="eyebrow">Access paused</p>
+    <h1>Your account is disabled</h1>
+    <p>An admin has turned off your access to the QA Task Board. Ask your QA lead to turn it back on.</p>
+    <button class="btn" id="blockedSignOut" type="button">Sign out</button>
+  </div>
+</section>
+
+<!-- App -->
+<div id="appScreen" hidden>
+<header class="top">
+  <div class="wrap">
+    <div class="row1">
+      <h1>QA Task Board <small>1 Finance · QA</small></h1>
+      <div class="stats" id="stats" aria-live="polite"></div>
+      <button class="btn primary" id="newBtn" type="button">+ New task</button>
+      <div class="acct">
+        <img id="meAvatar" alt="" referrerpolicy="no-referrer">
+        <div class="who"><b id="meName"></b><span class="role" id="meRole"></span></div>
+        <button class="btn sm" id="signOutBtn" type="button">Sign out</button>
+      </div>
+    </div>
+    <div class="row2">
+      <nav class="tabs" aria-label="Views">
+        <a href="#board">Board</a>
+        <a href="#week">This week</a>
+        <a href="#calendar">Calendar</a>
+        <a href="#all">All tasks</a>
+        <a href="#team" id="teamTab" hidden>Team</a>
+      </nav>
+      <div class="filters" id="filters">
+        <input type="search" id="q" placeholder="Search tasks" aria-label="Search tasks">
+        <select id="typeF" aria-label="Filter by type"></select>
+        <select id="ownerF" aria-label="Filter by owner"></select>
+        <label class="toggle"><input type="checkbox" id="mineF"> My tasks</label>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main><div class="wrap">
+  <button class="btn primary" id="newBtnM" type="button">+ New task</button>
+  <p class="note" id="note" hidden></p>
+  <div id="view"></div>
+</div></main>
+</div>
+
+<dialog id="dlg" aria-labelledby="edTitle">
+  <form class="ed" id="ed" novalidate>
+    <h2 id="edTitle">New task</h2>
+    <label class="f">Task<input id="fTitle" required maxlength="200" placeholder="e.g. Sanity test Macro homepage after release"></label>
+    <div class="grid2">
+      <label class="f">Status<select id="fStatus"></select></label>
+      <label class="f">Priority<select id="fPri"></select></label>
+      <label class="f">Type<select id="fType"></select></label>
+      <label class="f">Due date<input type="date" id="fDue"></label>
+    </div>
+    <label class="f">Owner<select id="fOwner"></select></label>
+    <label class="f">Notes<textarea id="fNotes" maxlength="5000" placeholder="Steps, environment, build number, findings"></textarea></label>
+    <p class="fine" id="edMeta" hidden></p>
+    <p class="err" id="edErr" hidden></p>
+    <div class="actions">
+      <button type="button" class="btn danger" id="delBtn" hidden>Delete</button>
+      <span class="sp"></span>
+      <button type="button" class="btn" id="cancelBtn">Cancel</button>
+      <button type="submit" class="btn primary" id="saveBtn">Save task</button>
+    </div>
+  </form>
+</dialog>
+<!-- Day popup: opened by tapping a date on the calendar (phones) -->
+<dialog id="dayDlg" class="day" aria-labelledby="dayTitle">
+  <div class="day-in">
+    <div class="day-h">
+      <div><h2 id="dayTitle"></h2><p class="fine" id="daySub"></p></div>
+      <button type="button" class="day-x" id="dayClose" aria-label="Close">×</button>
+    </div>
+    <div id="dayList"></div>
+    <button type="button" class="btn primary" id="dayAdd">+ Create new task</button>
+  </div>
+</dialog>
+<div class="toast" id="toast" role="status"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
