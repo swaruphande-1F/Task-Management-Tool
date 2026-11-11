@@ -165,6 +165,13 @@ label.f textarea{min-height:84px;resize:vertical}
 
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--fg);color:var(--bg);padding:8px 14px;border-radius:8px;font-size:13px;z-index:20;opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.on{opacity:1}
+.toast.link.on{pointer-events:auto}
+.toast a{color:inherit;font-weight:600;text-decoration:underline;margin-left:4px}
+.export{position:relative}
+.export-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:6;min-width:190px;display:flex;flex-direction:column;padding:4px;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.16)}
+.export-menu[hidden]{display:none}
+.export-menu button{border:0;background:none;text-align:left;padding:8px 10px;border-radius:6px;font-weight:500;color:var(--fg)}
+.export-menu button:hover,.export-menu button:focus-visible{background:var(--surface-2)}
 @media (prefers-reduced-motion:reduce){.toast{transition:none}}
 @media (max-width:640px){.stats{margin-left:0}.filters input[type=search]{width:100%}}
 
@@ -242,6 +249,10 @@ tr.is-disabled td{color:var(--muted)}
   .filters input[type=search],.filters select{font-size:16px;padding:8px 10px;width:100%}
   .toggle{white-space:nowrap}
   .toggle input{width:18px;height:18px}
+  .export{grid-column:1/-1}
+  #exportBtn{width:100%;justify-content:center;min-height:40px}
+  .export-menu{left:0;right:0}
+  .export-menu button{padding:12px}
 
   main .wrap{padding-block:14px 32px}
 

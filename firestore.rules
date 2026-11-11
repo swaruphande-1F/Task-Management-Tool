@@ -10,7 +10,7 @@ service cloud.firestore {
     function signedIn() {
       return request.auth != null
         && request.auth.token.email_verified == true
-        && request.auth.token.email.lower().matches('.*@1finance[.]org[.]in$');
+        && request.auth.token.email.lower().matches('.*@(1finance[.]org[.]in|atriina[.]com)$');
     }
     function myProfile() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;

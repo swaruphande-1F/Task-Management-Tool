@@ -4,7 +4,8 @@ import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChang
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, doc, onSnapshot, addDoc, updateDoc, deleteDoc, setDoc, getDoc, serverTimestamp }
   from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { ALLOWED_DOMAIN, ADMIN_EMAILS, FIREBASE_CONFIG } from "./config.js";
+import { ALLOWED_DOMAINS, ADMIN_EMAILS, FIREBASE_CONFIG, SHEET_EXPORT_URL } from "./config.js";
+const DOMAIN_TEXT = ALLOWED_DOMAINS.map(d => "@" + d).join(" or ");
 
 /* ---------- Constants ---------- */
 const STATUSES = [
@@ -85,7 +86,14 @@ function ownerEl(uid, showName = true) {
   return h("span", { class: "owner", title: nm }, avatar(uid), showName ? h("span", {}, nm) : null);
 }
 const statusEl = k => { const s = S[k] || S.todo; return h("span", { class: "status" }, h("span", { class: "dot", style: "background:" + s.c }), s.l); };
-function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), 2000); }
+function toast(msg, ms = 2000) { const t = $("toast"); t.textContent = msg; t.classList.remove("link"); t.classList.add("on"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("on"), ms); }
+// Toast with a clickable link (stays a little longer so there's time to click it).
+function toastLink(msg, href, linkText) {
+  toast(msg, 8000);
+  if (!href) return;
+  const t = $("toast"); t.classList.add("link");
+  t.append(" ", h("a", { href, target: "_blank", rel: "noopener" }, linkText));
+}
 function note(msg) { const n = $("note"); n.textContent = msg || ""; n.hidden = !msg; }
 function fillSelect(el, opts) { el.replaceChildren(...opts.map(o => h("option", { value: o.k ?? o }, o.l ?? o))); }
 function showScreen(id) { for (const s of ["bootScreen", "loginScreen", "blockedScreen", "appScreen"]) $(s).hidden = s !== id; }
@@ -205,6 +213,81 @@ function renderCal() {
     h("div", { class: "cal-scroll" }, h("div", { class: "cal" }, ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => h("div", { class: "dow" }, d)), cells)));
 }
 
+/* ---------- CSV export: every task that isn't Done (open, pending, overdue) ---------- */
+// Quote every cell; prefix cells that start like a formula so Excel/Sheets show them as text.
+function csvCell(v) {
+  let s = v == null ? "" : String(v);
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return '"' + s.replace(/"/g, '""') + '"';
+}
+// Open tasks matching the current filters, overdue first, then by due date.
+const exportRows = () => visible().filter(isOpen)
+  .sort((a, b) => (isOver(b) - isOver(a)) || (a.due || "9999").localeCompare(b.due || "9999"));
+function exportCsv() {
+  const rows = exportRows();
+  if (!rows.length) { toast("No open tasks to export"); return; }
+  const ts = t => t?.toDate ? fmtTs(t) : "";
+  const head = ["Task", "Status", "Overdue", "Priority", "Type", "Owner", "Owner email", "Due date", "Created by", "Created on", "Last updated", "Notes"];
+  const body = rows.map(t => [
+    t.title || "Untitled", (S[t.status] || S.todo).l, isOver(t) ? "Yes" : "No", t.priority || "P3", t.type || "",
+    t.ownerId ? userName(t.ownerId) : "Unassigned", users[t.ownerId]?.email || "", t.due || "",
+    t.createdBy ? userName(t.createdBy) : "", ts(t.createdAt), ts(t.updatedAt), t.notes || "",
+  ]);
+  const csv = "﻿" + [head, ...body].map(r => r.map(csvCell).join(",")).join("\r\n"); // BOM so Excel reads UTF-8
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const a = h("a", { href: url, download: `qa-open-tasks-${todayIso()}.csv` });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const over = rows.filter(isOver).length;
+  toast(`Exported ${rows.length} open task${rows.length > 1 ? "s" : ""}` + (over ? ` (${over} overdue)` : ""));
+}
+/* ---------- Google Sheet export: new "QA Scrum <date>" tab via the Apps Script web app ---------- */
+let sheetBusy = false;
+async function exportSheet() {
+  if (sheetBusy) return;
+  const rows = exportRows();
+  if (!rows.length) { toast("No open tasks to export"); return; }
+  const tasks = rows.map(t => ({
+    title: t.title || "Untitled",
+    decision: [t.type, t.priority || "P3"].filter(Boolean).join(" · ") + (t.notes ? "\n" + t.notes : ""),
+    owner: t.ownerId ? userName(t.ownerId) : "Unassigned",
+    status: (S[t.status] || S.todo).l + (isOver(t) ? " (Overdue)" : ""),
+    due: t.due || "",
+  }));
+  const btn = $("exportBtn"), label = btn.textContent;
+  sheetBusy = true; btn.disabled = true; btn.textContent = "Adding to sheet…";
+  try {
+    const idToken = await me.getIdToken();
+    // text/plain keeps this a "simple" request, so Apps Script needs no CORS preflight.
+    const r = await fetch(SHEET_EXPORT_URL, {
+      method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify({ idToken, by: users[me.uid]?.name || me.displayName || me.email, tasks }),
+    });
+    const res = await r.json().catch(() => ({ ok: false, error: `Unexpected reply (HTTP ${r.status})` }));
+    if (!res.ok) throw new Error(res.error || "Unknown error");
+    toastLink(`Added ${res.count} task${res.count > 1 ? "s" : ""} to “${res.sheet}”`, res.url, "Open sheet");
+  } catch (e) {
+    toast("Couldn't add to Google Sheet: " + (e?.message || "network error"), 5000);
+  } finally {
+    sheetBusy = false; btn.disabled = false; btn.textContent = label;
+  }
+}
+
+// Export menu: Download CSV / Add to Google Sheet.
+const exportMenu = $("exportMenu");
+$("exportCsvBtn").onclick = () => { closeExportMenu(); exportCsv(); };
+$("exportSheetBtn").onclick = () => { closeExportMenu(); exportSheet(); };
+$("exportSheetBtn").hidden = !SHEET_EXPORT_URL;
+function closeExportMenu() { exportMenu.hidden = true; $("exportBtn").setAttribute("aria-expanded", "false"); }
+$("exportBtn").onclick = e => {
+  e.stopPropagation();
+  const open = exportMenu.hidden;
+  exportMenu.hidden = !open; $("exportBtn").setAttribute("aria-expanded", String(open));
+  if (open) $("exportCsvBtn").focus();
+};
+document.addEventListener("click", e => { if (!exportMenu.hidden && !e.target.closest(".export")) closeExportMenu(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !exportMenu.hidden) { closeExportMenu(); $("exportBtn").focus(); } });
+
 /* ---------- Day popup (mobile calendar) ---------- */
 const mobileMq = matchMedia("(max-width:640px)");
 const isMobile = () => mobileMq.matches;
@@ -253,7 +336,7 @@ function renderTeam() {
   const openCount = uid => tasks.filter(t => t.ownerId === uid && isOpen(t)).length;
   return h("div", {},
     h("div", { class: "team-head" }, h("h2", {}, "Team"),
-      h("p", {}, `${list.length} people have signed in. New people join as Members the first time they sign in with a @${ALLOWED_DOMAIN} account.`)),
+      h("p", {}, `${list.length} people have signed in. New people join as Members the first time they sign in with a ${DOMAIN_TEXT} account.`)),
     h("div", { class: "tbl-scroll" }, h("table", { class: "team" },
       h("thead", {}, h("tr", {}, ["Person", "Role", "Open tasks", "Last sign-in"].map(l => h("th", {}, l)))),
       h("tbody", {}, list.map(u => {
@@ -364,7 +447,7 @@ async function onSignedIn(u) {
   if (!okDomain || !u.emailVerified) {
     const msg = okDomain
       ? "Your email isn't verified yet. Try signing in again."
-      : `Only @${ALLOWED_DOMAIN} accounts can use the QA Task Board. ${u.email || "That account"} isn't allowed. Sign in with your company account.`;
+      : `Only ${DOMAIN_TEXT} accounts can use the QA Task Board. ${u.email || "That account"} isn't allowed. Sign in with your company account.`;
     pendingLoginMsg = msg; // shown by the signed-out callback too, so it isn't wiped
     // Remove the stray Firebase Auth record so outside accounts don't pile up in the user list.
     if (!okDomain) { try { await u.delete(); } catch { } }
@@ -432,7 +515,7 @@ function loginError(msg) { $("loginErr").textContent = msg || ""; $("loginErr").
 
 /* ---------- Email link sign-in ---------- */
 const EMAIL_KEY = "qa-signin-email";
-const domainOk = e => e.endsWith("@" + ALLOWED_DOMAIN.toLowerCase());
+const domainOk = e => ALLOWED_DOMAINS.some(d => e.endsWith("@" + d.toLowerCase()));
 const emailShape = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 let pendingLoginMsg = "";
 let finishingLink = false; // a sign-in link was opened on a device that doesn't remember the email
@@ -458,7 +541,7 @@ $("emailForm").addEventListener("submit", async e => {
   const email = $("emailIn").value.trim().toLowerCase();
   // Check the domain here, before anything is sent.
   if (!emailShape(email)) { loginError("Enter a valid email address."); $("emailIn").focus(); return; }
-  if (!domainOk(email)) { loginError(`Only @${ALLOWED_DOMAIN} emails can sign in. ${email} isn't allowed.`); $("emailIn").focus(); return; }
+  if (!domainOk(email)) { loginError(`Only ${DOMAIN_TEXT} emails can sign in. ${email} isn't allowed.`); $("emailIn").focus(); return; }
   const btn = $("emailBtn"); btn.disabled = true;
   try {
     if (finishingLink) {
@@ -478,7 +561,7 @@ $("emailAgain").onclick = () => { $("emailSent").hidden = true; $("emailForm").h
 $("googleBtn").onclick = async () => {
   $("loginErr").hidden = true; pendingLoginMsg = "";
   const provider = new GoogleAuthProvider();
-  provider.setCustomParameters({ hd: ALLOWED_DOMAIN, prompt: "select_account" });
+provider.setCustomParameters({ prompt: "select_account" });
   try { await signInWithPopup(auth, provider); }
   catch (e) {
     if (e.code === "auth/popup-closed-by-user" || e.code === "auth/cancelled-popup-request") return;
@@ -491,7 +574,7 @@ $("blockedSignOut").onclick = () => { pendingLoginMsg = ""; signOut(auth); };
 
 /* ---------- Boot ---------- */
 (async () => {
-  $("domainNote").textContent = `Only @${ALLOWED_DOMAIN} accounts can sign in.`;
+  $("domainNote").textContent = `Only ${DOMAIN_TEXT} accounts can sign in.`;
   let cfg = FIREBASE_CONFIG;
   if (!cfg) {
     try { const r = await fetch("/__/firebase/init.json"); if (r.ok) cfg = await r.json(); } catch { }
