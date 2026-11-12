@@ -115,7 +115,7 @@ function paint() {
   });
   $("teamTab").hidden = !isAdmin();
   $("filters").hidden = view === "team";
-  $("newBtnM").hidden = view === "team" || view === "calendar"; // mobile-only button; calendar adds tasks from the day popup
+  $("newBtnM").hidden = view === "team" || view === "calendar"; // not on Team or Calendar
   if ($("dayDlg").open) renderDay(); // keep the day popup in sync with live updates
   const [ws, we] = weekRange(), open = tasks.filter(isOpen);
   const stats = [
@@ -399,7 +399,7 @@ function openEditor(t, status, due) {
 }
 $("cancelBtn").onclick = () => $("dlg").close();
 $("newBtn").onclick = () => openEditor();
-$("newBtnM").onclick = () => openEditor(); // mobile-only copy, shown above the board
+$("newBtnM").onclick = () => openEditor(); // shown above the board (desktop and mobile)
 $("delBtn").onclick = async () => {
   const b = $("delBtn");
   if (!b.classList.contains("armed")) { b.classList.add("armed"); b.textContent = "Confirm delete"; return; }
